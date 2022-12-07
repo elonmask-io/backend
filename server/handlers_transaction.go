@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -11,6 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"math/big"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 func (s *Server) handleGetTransactions() echo.HandlerFunc {
@@ -92,7 +95,7 @@ func (s *Server) handleTransactionFinalize() echo.HandlerFunc {
 			return echo.NewHTTPError(http.StatusBadRequest, "must call transaction-init first")
 		}
 
-		_, err := s.webAuthn.FinishLogin(&userData.user, *userData.loginSession, c.Request())
+		_, err := s.webAuthn.FinishLogin(&userData.user, *userData.transactionSession, c.Request())
 		if err != nil {
 			log.Error().Caller().Err(err).Msg("failed to finish tx")
 			return echo.NewHTTPError(http.StatusBadRequest, "failed to verify credentials")
@@ -100,7 +103,13 @@ func (s *Server) handleTransactionFinalize() echo.HandlerFunc {
 
 		userData.transactionSession = nil
 
-		hash, err := s.transferETH(*userData.privateKey, receiverAddress, amount, c.Request().Context())
+		amountWei, err := convertAmountToWei(amount)
+		if err != nil {
+			log.Info().Caller().Err(err).Msg("conversion failed")
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid amount")
+		}
+
+		hash, err := s.transferETH(*userData.privateKey, receiverAddress, amountWei, c.Request().Context())
 		if err != nil {
 			log.Error().Caller().Err(err).Msg("failed to send tx")
 			return echo.NewHTTPError(http.StatusInternalServerError)
@@ -112,7 +121,18 @@ func (s *Server) handleTransactionFinalize() echo.HandlerFunc {
 	}
 }
 
-func (s *Server) transferETH(senderSk ecdsa.PrivateKey, receiverAddress string, amountInWei string, ctx context.Context) (common.Hash, error) {
+func convertAmountToWei(amount string) (int64, error) {
+	amount = strings.Replace(amount, ",", ".", 1)
+
+	a, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert: %w", err)
+	}
+
+	return int64(a * 1000000000000000000), nil
+}
+
+func (s *Server) transferETH(senderSk ecdsa.PrivateKey, receiverAddress string, amountInWei int64, ctx context.Context) (common.Hash, error) {
 	fromAddress := crypto.PubkeyToAddress(senderSk.PublicKey)
 
 	nonce, err := s.client.PendingNonceAt(ctx, fromAddress)
@@ -120,8 +140,7 @@ func (s *Server) transferETH(senderSk ecdsa.PrivateKey, receiverAddress string, 
 		return common.Hash{}, err
 	}
 
-	value := new(big.Int)
-	value.SetString(amountInWei, 10)
+	value := big.NewInt(amountInWei)
 	gasLimit := uint64(21000)         // in units
 	tipCap := big.NewInt(2000000000)  // maxPriorityFeePerGas = 2 Gwei
 	feeCap := big.NewInt(20000000000) // maxFeePerGas = 20 Gwei
@@ -144,7 +163,7 @@ func (s *Server) transferETH(senderSk ecdsa.PrivateKey, receiverAddress string, 
 		Data:      make([]byte, 0),
 	})
 
-	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(chainID), s.sk)
+	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(chainID), &senderSk)
 	if err != nil {
 		return common.Hash{}, err
 	}

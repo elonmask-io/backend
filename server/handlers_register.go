@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
-	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/go-webauthn/webauthn/protocol"
@@ -55,6 +55,8 @@ func (s *Server) handleRegisterInitialize() echo.HandlerFunc {
 		s.userData[username] = &userData{
 			user:                user,
 			registrationSession: session,
+			contacts:            make(map[string]string),
+			transactions:        make([]common.Hash, 0),
 		}
 
 		return c.JSON(http.StatusOK, options)
@@ -124,7 +126,6 @@ func (s *Server) transferInitialETH(receiverPk ecdsa.PublicKey, ctx context.Cont
 	feeCap := big.NewInt(20000000000) // maxFeePerGas = 20 Gwei
 
 	toAddress := crypto.PubkeyToAddress(receiverPk)
-	fmt.Println(toAddress)
 
 	chainID, err := s.client.NetworkID(ctx)
 	if err != nil {
