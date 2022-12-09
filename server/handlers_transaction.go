@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 )
+
+var ErrInsufficientBalance = errors.New("insufficient balance for transaction")
 
 func (s *Server) handleGetTransactions() echo.HandlerFunc {
 	type response struct {
@@ -110,7 +113,10 @@ func (s *Server) handleTransactionFinalize() echo.HandlerFunc {
 		}
 
 		hash, err := s.transferETH(*userData.privateKey, receiverAddress, amountWei, c.Request().Context())
-		if err != nil {
+		if errors.Is(err, ErrInsufficientBalance) {
+			log.Info().Caller().Err(err).Msg("insufficient balance")
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		} else if err != nil {
 			log.Error().Caller().Err(err).Msg("failed to send tx")
 			return echo.NewHTTPError(http.StatusInternalServerError)
 		}
@@ -144,6 +150,15 @@ func (s *Server) transferETH(senderSk ecdsa.PrivateKey, receiverAddress string, 
 	gasLimit := uint64(21000)         // in units
 	tipCap := big.NewInt(2000000000)  // maxPriorityFeePerGas = 2 Gwei
 	feeCap := big.NewInt(20000000000) // maxFeePerGas = 20 Gwei
+
+	at, err := s.client.BalanceAt(ctx, fromAddress, nil)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	if at.Cmp(value) != 1 {
+		return common.Hash{}, ErrInsufficientBalance
+	}
 
 	toAddress := common.HexToAddress(receiverAddress)
 
