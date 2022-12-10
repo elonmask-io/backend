@@ -8,18 +8,18 @@ import (
 
 func (s *Server) registerRoutes() {
 	s.echo.Use(s.cors())
-	s.echo.GET("/register-init", s.handleRegisterInitialize())
-	s.echo.POST("/register-finalize", s.handleRegisterFinalize())
+	s.echo.GET("/api/register-init", s.handleRegisterInitialize())
+	s.echo.POST("/api/register-finalize", s.handleRegisterFinalize())
 
-	s.echo.GET("/login-init", s.handleLoginInitialize())
-	s.echo.POST("/login-finalize", s.handleLoginFinalize())
+	s.echo.GET("/api/login-init", s.handleLoginInitialize())
+	s.echo.POST("/api/login-finalize", s.handleLoginFinalize())
 
-	s.echo.GET("/transaction-init", s.handleTransactionInitialize(), checkAuth())
-	s.echo.POST("/transaction-finalize", s.handleTransactionFinalize(), checkAuth())
+	s.echo.GET("/api/transaction-init", s.handleTransactionInitialize(), checkAuth())
+	s.echo.POST("/api/transaction-finalize", s.handleTransactionFinalize(), checkAuth())
 
-	s.echo.POST("/create-contact", s.handleCreateContact(), checkAuth())
-	s.echo.GET("/get-contacts", s.handleGetContacts(), checkAuth())
-	s.echo.GET("/get-transactions", s.handleGetTransactions(), checkAuth())
+	s.echo.POST("/api/create-contact", s.handleCreateContact(), checkAuth())
+	s.echo.GET("/api/get-contacts", s.handleGetContacts(), checkAuth())
+	s.echo.GET("/api/get-transactions", s.handleGetTransactions(), checkAuth())
 }
 
 func (s *Server) cors() echo.MiddlewareFunc {
