@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
@@ -17,11 +18,80 @@ import (
 	"strings"
 )
 
-var ErrInsufficientBalance = errors.New("insufficient balance for transaction")
+type MoralisTransaction struct {
+	Hash                     string  `json:"hash"`
+	Nonce                    string  `json:"nonce"`
+	TransactionIndex         string  `json:"transaction_index"`
+	FromAddress              string  `json:"from_address"`
+	ToAddress                string  `json:"to_address"`
+	Value                    string  `json:"value"`
+	Gas                      string  `json:"gas"`
+	GasPrice                 string  `json:"gas_price"`
+	Input                    string  `json:"input"`
+	ReceiptCumulativeGasUsed string  `json:"receipt_cumulative_gas_used"`
+	ReceiptGasUsed           string  `json:"receipt_gas_used"`
+	ReceiptContractAddress   string  `json:"receipt_contract_address"`
+	ReceiptRoot              string  `json:"receipt_root"`
+	ReceiptStatus            string  `json:"receipt_status"`
+	BlockTimestamp           string  `json:"block_timestamp"`
+	BlockNumber              string  `json:"block_number"`
+	BlockHash                string  `json:"block_hash"`
+	TransferIndex            []int64 `json:"transfer_index"`
+}
+
+type moralisResponse struct {
+	Total    int64                `json:"total"`
+	PageSize int64                `json:"page_size"`
+	Page     int64                `json:"page"`
+	Cursor   string               `json:"cursor"`
+	Result   []MoralisTransaction `json:"result"`
+}
+
+var ErrInsufficientBalance = errors.New("insufficient balance for transaction and gas")
+
+func (s *Server) fetchTransactionBatchFromMoralis(url, cursor string) (*moralisResponse, error) {
+	if cursor != "" {
+		url = fmt.Sprintf("%s&cursor=%s", url, cursor)
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("accept", "application/json")
+	req.Header.Add("X-API-Key", s.cfg.MoralisAPIKey)
+
+	res, _ := http.DefaultClient.Do(req)
+	defer res.Body.Close()
+
+	var response moralisResponse
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("moralis api error: %w", err)
+	}
+
+	return &response, nil
+}
+
+func (s *Server) fetchAllTransactionsFromMoralis(url string) ([]MoralisTransaction, error) {
+	cursor := ""
+	transactions := make([]MoralisTransaction, 0)
+
+	for {
+		resp, err := s.fetchTransactionBatchFromMoralis(url, cursor)
+		if err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, resp.Result...)
+
+		cursor = resp.Cursor
+		if cursor == "" {
+			break
+		}
+	}
+
+	return transactions, nil
+}
 
 func (s *Server) handleGetTransactions() echo.HandlerFunc {
 	type response struct {
-		Transactions []types.Transaction `json:"transactions"`
+		Transactions []MoralisTransaction `json:"transactions"`
 	}
 
 	return func(c echo.Context) error {
@@ -33,19 +103,15 @@ func (s *Server) handleGetTransactions() echo.HandlerFunc {
 			return echo.NewHTTPError(http.StatusBadRequest, "user does not exist")
 		}
 
-		res := response{
-			Transactions: make([]types.Transaction, 0),
+		url := fmt.Sprintf("https://deep-index.moralis.io/api/v2/%s?chain=goerli", crypto.PubkeyToAddress(userData.privateKey.PublicKey).Hex())
+
+		transactions, err := s.fetchAllTransactionsFromMoralis(url)
+		if err != nil {
+			log.Error().Caller().Err(err).Msg("failed to fetch transactions from moralis")
+			return echo.NewHTTPError(http.StatusInternalServerError)
 		}
 
-		for _, hash := range userData.transactions {
-			tx, _, err := s.client.TransactionByHash(c.Request().Context(), hash)
-			if err != nil {
-				log.Error().Caller().Err(err).Msg("failed to get transaction by hash")
-				return echo.NewHTTPError(http.StatusInternalServerError)
-			}
-
-			res.Transactions = append(res.Transactions, *tx)
-		}
+		res := response{Transactions: transactions}
 
 		return c.JSON(http.StatusOK, res)
 	}
@@ -151,20 +217,23 @@ func (s *Server) transferETH(senderSk ecdsa.PrivateKey, receiverAddress string, 
 	tipCap := big.NewInt(2000000000)  // maxPriorityFeePerGas = 2 Gwei
 	feeCap := big.NewInt(20000000000) // maxFeePerGas = 20 Gwei
 
-	at, err := s.client.BalanceAt(ctx, fromAddress, nil)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
-	if at.Cmp(value) != 1 {
-		return common.Hash{}, ErrInsufficientBalance
-	}
-
 	toAddress := common.HexToAddress(receiverAddress)
 
 	chainID, err := s.client.NetworkID(ctx)
 	if err != nil {
 		return common.Hash{}, err
+	}
+
+	balance, err := s.client.BalanceAt(ctx, fromAddress, nil)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	requiredBalance := big.NewInt(int64(gasLimit))
+	requiredBalance.Add(requiredBalance, value)
+
+	if balance.Cmp(requiredBalance) != 1 {
+		return common.Hash{}, ErrInsufficientBalance
 	}
 
 	tx := types.NewTx(&types.DynamicFeeTx{
