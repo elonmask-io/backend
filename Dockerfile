@@ -14,4 +14,6 @@ COPY --from=build-env --chown=root:root \
     /app/backend \
     /app/
 
+EXPOSE 8080
+
 ENTRYPOINT [ "/app/backend" ]

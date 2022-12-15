@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-var secretKey = []byte("test")
-
 func (s *Server) createJWT(username string, pubKeyHex string) (string, error) {
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
@@ -20,7 +18,7 @@ func (s *Server) createJWT(username string, pubKeyHex string) (string, error) {
 	claims["nbf"] = now.Unix()
 	claims["iat"] = now.Unix()
 
-	tokenString, err := token.SignedString(secretKey)
+	tokenString, err := token.SignedString([]byte(s.cfg.SecretKey))
 
 	if err != nil {
 		return "", err
@@ -28,12 +26,12 @@ func (s *Server) createJWT(username string, pubKeyHex string) (string, error) {
 	return tokenString, nil
 }
 
-func validateJWT(tokenString string) (jwt.MapClaims, bool) {
+func (s *Server) validateJWT(tokenString string) (jwt.MapClaims, bool) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("invalid token format")
 		}
-		return secretKey, nil
+		return []byte(s.cfg.SecretKey), nil
 	})
 
 	if err != nil || token == nil {

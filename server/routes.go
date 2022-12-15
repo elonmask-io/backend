@@ -14,12 +14,14 @@ func (s *Server) registerRoutes() {
 	s.echo.GET("/api/login-init", s.handleLoginInitialize())
 	s.echo.POST("/api/login-finalize", s.handleLoginFinalize())
 
-	s.echo.GET("/api/transaction-init", s.handleTransactionInitialize(), checkAuth())
-	s.echo.POST("/api/transaction-finalize", s.handleTransactionFinalize(), checkAuth())
+	s.echo.GET("/api/transaction-init", s.handleTransactionInitialize(), s.checkAuth())
+	s.echo.POST("/api/transaction-finalize", s.handleTransactionFinalize(), s.checkAuth())
 
-	s.echo.POST("/api/create-contact", s.handleCreateContact(), checkAuth())
-	s.echo.GET("/api/get-contacts", s.handleGetContacts(), checkAuth())
-	s.echo.GET("/api/get-transactions", s.handleGetTransactions(), checkAuth())
+	s.echo.POST("/api/create-contact", s.handleCreateContact(), s.checkAuth())
+	s.echo.GET("/api/get-contacts", s.handleGetContacts(), s.checkAuth())
+	s.echo.GET("/api/get-transactions", s.handleGetTransactions(), s.checkAuth())
+
+	s.echo.GET("/api/get-emails", s.handleGetEmails())
 }
 
 func (s *Server) cors() echo.MiddlewareFunc {

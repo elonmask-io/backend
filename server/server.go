@@ -90,7 +90,7 @@ func New(cfg config.ServerConfig) (*Server, error) {
 func (s *Server) Run() (err error) {
 	s.registerRoutes()
 
-	err = s.echo.Start(fmt.Sprintf("0.0.0.0:%d", s.cfg.BackendPort))
+	err = s.echo.Start("0.0.0.0:8080")
 	if err == http.ErrServerClosed {
 		err = nil
 	}

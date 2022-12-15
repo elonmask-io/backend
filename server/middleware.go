@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func checkAuth() echo.MiddlewareFunc {
+func (s *Server) checkAuth() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			bearer := c.Request().Header.Get("Authorization")
@@ -25,7 +25,7 @@ func checkAuth() echo.MiddlewareFunc {
 				return echo.NewHTTPError(http.StatusBadRequest, "missing bearer token")
 			}
 
-			claims, ok := validateJWT(token)
+			claims, ok := s.validateJWT(token)
 			if !ok {
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid bearer token")
 			}
